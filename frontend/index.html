@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MimoMou</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <h1>MimoMou</h1>
+      </div>
+
+      <div class="controls">
+        <label for="mode-select">Mode retrieval</label>
+        <select id="mode-select">
+          <option value="SCG" selected>SCG</option>
+          <option value="Baseline">Baseline</option>
+        </select>
+        <button id="new-chat-btn" title="Mulai percakapan baru">Chat Baru</button>
+      </div>
+    </header>
+
+    <main id="chat-window" class="chat-window">
+      <!-- pesan akan di-render di sini oleh script.js -->
+    </main>
+
+    <form id="chat-form" class="chat-form">
+      <textarea
+        id="chat-input"
+        placeholder="Tanya soal blu, Jago, atau SeaBank..."
+        rows="1"
+        required
+      ></textarea>
+      <button id="send-btn" type="submit">Kirim</button>
+    </form>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

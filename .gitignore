@@ -1,0 +1,31 @@
+# Environment
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Editor
+.vscode/
+.idea/
+
+# Vector DB (hasil generate, jangan di-commit -- berat & bisa dibangun ulang)
+chroma_db/
+chroma_db_scg/
+
+# Checkpoint & log
+scg_checkpoint.jsonl
+eval_checkpoint.jsonl
+logs/*.log
+
+# Hasil evaluasi
+ragas_result_baseline.xlsx
+ragas_result_scg.xlsx
+ragas_summary_comparison.xlsx
+
+# Data mentah (opsional, uncomment kalau PDF tidak mau di-commit)
+# data/pdf/*
+
+.DS_Store
+
+streamlit_app.py
