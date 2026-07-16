@@ -9,10 +9,10 @@ from src.vectordb.vector_store import load_vector_store, get_db_path
 TEST_QUERIES = {
     "relevant": [
         "Aku sering melihat tips investasi di media sosial. Apa semua informasi tersebut bisa langsung dipercaya?",
-        "Jika pengeluaran bulanan seseorang Rp1.500.000, berapa dana darurat minimal yang sebaiknya disiapkan?",
-        "Berapa batas maksimal cicilan utang yang disarankan?",
-        "Apa itu metode budgeting 50/30/20?",
-        "Aku ingin membeli rumah beberapa tahun lagi. Apa yang perlu dipersiapkan terlebih dahulu?",
+        "Apa itu dana darurat, dan bedanya sama tabungan biasa?",
+        "Kalau saya pinjam pinjol legal dengan tenor 4 bulan, berapa batas maksimal bunga per hari yang boleh dikenakan?",
+        "Saya sudah punya dana darurat 3 bulan pengeluaran sebagai lajang, cukup gak menurut standar OJK, dan langkah apa yang seharusnya saya prioritaskan setelahnya investasi atau asuransi dulu?",
+        "Bandingkan biaya Tidak Aktif Bank Jago (mulai berlaku Mei 2026) dengan kebijakan biaya SeaBank dan blu, bank mana yang punya risiko biaya tersembunyi kalau akun didiamkan lama?",
     ],
     "irrelevant": [
         "Bagaimana cara membuat rendang yang enak?",
