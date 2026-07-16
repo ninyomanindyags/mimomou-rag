@@ -14,7 +14,8 @@ chunking:
   chunk_overlap: 150
 
 retrieval:
-  score_threshold: 0.2741   # bisa dioverride lewat .env -> SCORE_THRESHOLD
+  score_threshold: 0.3343
+  # score_threshold: 0.2741   # bisa dioverride lewat .env -> SCORE_THRESHOLD
   fetch_k_baseline: 20
   fetch_k_scg: 22
   target_k: 10
