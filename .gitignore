@@ -9,13 +9,10 @@ __pycache__/
 .vscode/
 .idea/
 
-# Vector DB (hasil generate, jangan di-commit -- berat & bisa dibangun ulang)
-chroma_db/
-chroma_db_scg/
+# Vector DB, checkpoint (hasil generate, jangan di-commit -- berat & bisa dibangun ulang)
+vectorstore/
 
-# Checkpoint & log
-scg_checkpoint.jsonl
-eval_checkpoint.jsonl
+# Log
 logs/*.log
 
 # Hasil evaluasi

@@ -25,10 +25,10 @@ reranker:
 
 paths:
   data_pdf: ./data/pdf
-  chroma_baseline: ./chroma_db
-  chroma_scg: ./chroma_db_scg
-  scg_checkpoint: ./scg_checkpoint.jsonl
-  eval_checkpoint: ./eval_checkpoint.jsonl
+  chroma_baseline: ./vectorstore/chroma_db
+  chroma_scg: ./vectorstore/chroma_db_scg
+  scg_checkpoint: ./vectorstore/scg_checkpoint.jsonl
+  eval_checkpoint: ./vectorstore/eval_checkpoint.jsonl
   ground_truth: ground_truth_chatbot.xlsx
 
 conversation:
