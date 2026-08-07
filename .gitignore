@@ -2,6 +2,7 @@
 .env
 venv/
 .venv/
+.venv_eval/
 __pycache__/
 *.pyc
 
@@ -10,7 +11,6 @@ __pycache__/
 .idea/
 
 # Vector DB, checkpoint (hasil generate, jangan di-commit -- berat & bisa dibangun ulang)
-vectorstore/
 
 # Log
 logs/*.log
@@ -19,6 +19,8 @@ logs/*.log
 ragas_result_baseline.xlsx
 ragas_result_scg.xlsx
 ragas_summary_comparison.xlsx
+vectorstore/eval_checkpoint*.jsonl
+vectorstore/scg_checkpoint.jsonl
 
 # Data mentah (opsional, uncomment kalau PDF tidak mau di-commit)
 # data/pdf/*

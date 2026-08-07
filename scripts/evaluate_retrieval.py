@@ -183,7 +183,7 @@ def main():
 
     print("\n=== RINGKASAN PERBANDINGAN ===")
     print(summary.to_string(index=False))
-    print("\nFile hasil: ragas_result_baseline.xlsx, ragas_result_scg.xlsx, ragas_summary_comparison.xlsx")
+    print("\nFile hasil: ragas_result_baseline_scg.xlsx, ragas_result_scg_scg.xlsx, ragas_summary_comparison_scg.xlsx")
 
 
 if __name__ == "__main__":

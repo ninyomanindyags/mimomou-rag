@@ -1,11 +1,6 @@
-"""Retrieval: similarity search + score filtering + dedup (SCG) + rerank.
+import time
 
-Logic yang SAMA persis dipakai chatbot (src/api/routes.py) dan
-scripts/evaluate_retrieval.py, supaya evaluasi RAGAS benar-benar
-merepresentasikan pipeline yang dipakai user.
-"""
-import os
-
+from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
 from src.utils.helpers import load_config
@@ -14,75 +9,252 @@ _reranker = None
 
 
 def load_reranker():
-    """Reranker model, singleton -- model ini lumayan berat buat di-load ulang-ulang."""
     global _reranker
+
     if _reranker is None:
         config = load_config()["reranker"]
         _reranker = CrossEncoder(config["model_name"])
+
     return _reranker
 
 
-def rerank(query, docs, top_n=10):
-    """
-    Urutkan ulang `docs` berdasarkan relevansi terhadap `query` pakai cross-encoder.
-    Kalau reranker gagal, fallback ke urutan similarity search biar chatbot
-    tetap jalan, nggak crash total.
-    """
-    if not docs:
+def rerank(query, documents, top_n):
+    if not documents:
         return []
 
     try:
         model = load_reranker()
-        pairs = [(query, doc.page_content) for doc in docs]
+
+        pairs = [
+            (query, document.page_content)
+            for document in documents
+        ]
+
         scores = model.predict(pairs)
-        scored_docs = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
-        return [doc for doc, _ in scored_docs[:top_n]]
-    except Exception as e:
-        print(f"[Reranker Error] {e} - fallback ke urutan similarity search")
-        return docs[:top_n]
+
+        ranked = sorted(
+            zip(documents, scores),
+            key=lambda item: float(item[1]),
+            reverse=True,
+        )
+
+        return [
+            document
+            for document, _ in ranked[:top_n]
+        ]
+
+    except Exception as error:
+        print(
+            f"[Reranker Error] {error}. "
+            "Menggunakan urutan similarity search."
+        )
+        return documents[:top_n]
 
 
-def retrieve_docs(db, mode: str, question: str):
-    """
-    db     : instance Chroma (hasil load_vector_store())
-    mode   : "Baseline" atau "SCG"
-    question : pertanyaan (idealnya standalone_question, sudah dikontekstualisasi)
-    """
-    config = load_config()["retrieval"]
-
-    # SCORE_THRESHOLD tetap bisa dioverride lewat .env tanpa ubah kode/config.yaml
-    score_threshold = float(os.getenv("SCORE_THRESHOLD", config["score_threshold"]))
-
-    # fetch_k dinaikkan untuk KEDUA mode supaya reranker selalu punya kandidat
-    # lebih banyak dari target_k untuk dipilih ulang. SCG lebih tinggi karena
-    # tiap chunk_id punya 2 versi (original+synthetic) yang bakal kepotong
-    # separuh pas dedup, jadi butuh kandidat mentah lebih banyak dari awal.
-    fetch_k = config["fetch_k_scg"] if mode == "SCG" else config["fetch_k_baseline"]
-    target_k = config["target_k"]
-
-    try:
-        results = db.similarity_search_with_relevance_scores(question, k=fetch_k)
-    except Exception as e:
-        print(f"[Retrieval Error] {e}")
+# Fungsi ini tetap dipertahankan.
+# Tidak dipakai pada eksperimen ini, tetapi jangan dihapus
+# supaya nanti bisa kembali ke pipeline lama dengan mudah.
+def get_original_documents_by_chunk_ids(
+    db,
+    chunk_ids,
+):
+    if not chunk_ids:
         return []
 
-    # Buang dokumen yang relevansinya terlalu rendah (nggak nyambung sama query)
-    filtered = [(doc, score) for doc, score in results if score >= score_threshold]
+    try:
+        data = db.get(
+            where={
+                "source_type": "original",
+            },
+            include=[
+                "documents",
+                "metadatas",
+            ],
+        )
 
-    # Baseline: tidak ada pasangan original/synthetic, jadi tidak perlu dedup.
-    if mode != "SCG":
-        candidate_docs = [doc for doc, _ in filtered]
-        return rerank(question, candidate_docs, top_n=target_k)
+    except Exception as error:
+        print(f"[Mapping Error] {error}")
+        return []
 
-    # SCG: dedup berdasarkan chunk_id (bukan page!), hindari original & synthetic
-    # dari chunk sumber yang sama sama-sama masuk top-k.
-    seen = set()
-    deduped_docs = []
-    for doc, score in filtered:
-        key = doc.metadata.get("chunk_id")
-        if key in seen:
+    documents = data.get("documents", [])
+    metadatas = data.get("metadatas", [])
+
+    original_by_chunk_id = {}
+
+    for content, metadata in zip(
+        documents,
+        metadatas,
+    ):
+        if not metadata:
             continue
-        seen.add(key)
-        deduped_docs.append(doc)
 
-    return rerank(question, deduped_docs, top_n=target_k)
+        chunk_id = metadata.get("chunk_id")
+
+        if chunk_id is None:
+            continue
+
+        original_by_chunk_id[str(chunk_id)] = Document(
+            page_content=content,
+            metadata={
+                **metadata,
+                "source_type": "original",
+                "retrieval_source_type": "synthetic",
+            },
+        )
+
+    selected_documents = []
+    used_chunk_ids = set()
+
+    for chunk_id in chunk_ids:
+        key = str(chunk_id)
+
+        if key in used_chunk_ids:
+            continue
+
+        document = original_by_chunk_id.get(key)
+
+        if document is None:
+            continue
+
+        used_chunk_ids.add(key)
+        selected_documents.append(document)
+
+    return selected_documents
+
+
+def print_results(title, results):
+    print(f"\n{title}")
+
+    for index, item in enumerate(results, start=1):
+        if isinstance(item, tuple):
+            document, score = item
+            print(
+                f"{index}. "
+                f"chunk_id={document.metadata.get('chunk_id')} | "
+                f"type={document.metadata.get('source_type')} | "
+                f"score={float(score):.4f}"
+            )
+        else:
+            document = item
+            print(
+                f"{index}. "
+                f"chunk_id={document.metadata.get('chunk_id')} | "
+                f"type={document.metadata.get('source_type')}"
+            )
+
+
+def retrieve_docs(
+    db,
+    mode,
+    question,
+):
+    config = load_config()["retrieval"]
+
+    fetch_key = (
+        "fetch_k_scg"
+        if mode == "SCG"
+        else "fetch_k_baseline"
+    )
+
+    fetch_k = config[fetch_key]
+    target_k = config["target_k"]
+
+    source_type = (
+        "synthetic"
+        if mode == "SCG"
+        else "original"
+    )
+
+    print("\n" + "=" * 60)
+    print(f"MODE     : {mode}")
+    print(f"QUESTION : {question}")
+    print(f"FETCH_K  : {fetch_k}")
+    print(f"TARGET_K : {target_k}")
+    print("=" * 60)
+
+    start = time.perf_counter()
+
+    try:
+        similarity_results = (
+            db.similarity_search_with_relevance_scores(
+                question,
+                k=fetch_k,
+                filter={
+                    "source_type": source_type,
+                },
+            )
+        )
+
+    except Exception as error:
+        elapsed = time.perf_counter() - start
+
+        print(f"[Retrieval Error] {error}")
+        print(
+            f"[SIMILARITY TIME] {mode}: "
+            f"{elapsed:.4f} detik"
+        )
+
+        return []
+
+    elapsed = time.perf_counter() - start
+
+    print(
+        f"[SIMILARITY TIME] {mode}: "
+        f"{elapsed:.4f} detik"
+    )
+
+    if not similarity_results:
+        print("[Retrieval] Tidak ada hasil.")
+        return []
+
+    print_results(
+        f"HASIL SIMILARITY SEARCH ({mode})",
+        similarity_results,
+    )
+
+    candidates = [
+        document
+        for document, _ in similarity_results
+    ]
+
+    reranked_documents = rerank(
+        question,
+        candidates,
+        top_n=target_k,
+    )
+
+    # ==========================
+    # BASELINE
+    # ==========================
+    if mode != "SCG":
+        print_results(
+            "HASIL RERANK BASELINE - ORIGINAL UNTUK LLM",
+            reranked_documents,
+        )
+
+        return reranked_documents
+
+    # ==========================
+    # SCG (VERSI EKSPERIMEN)
+    # Synthetic langsung dikirim ke LLM
+    # ==========================
+
+    print_results(
+        "HASIL RERANK SCG - SYNTHETIC UNTUK LLM",
+        reranked_documents,
+    )
+
+    final_documents = []
+
+    for doc in reranked_documents:
+        final_documents.append(
+            Document(
+                page_content=doc.page_content,
+                metadata={
+                    **doc.metadata,
+                    "retrieval_source_type": "synthetic",
+                },
+            )
+        )
+
+    return final_documents

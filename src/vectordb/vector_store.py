@@ -29,8 +29,12 @@ def reset_vector_store(mode: str):
 def persist_documents(documents, mode: str) -> Chroma:
     """Embed `documents` lalu simpan sebagai koleksi Chroma baru."""
     db_path = get_db_path(mode)
+    # Gunakan cosine distance pada index Chroma. Konfigurasi ini harus
+    # ditetapkan saat koleksi dibuat; mengubah config setelah database lama
+    # dibuat tidak akan mengubah metric koleksi yang sudah ada.
     return Chroma.from_documents(
         documents=documents,
         embedding=load_embedder(),
         persist_directory=db_path,
+        collection_metadata={"hnsw:space": "cosine"},
     )

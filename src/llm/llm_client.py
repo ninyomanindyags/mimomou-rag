@@ -1,20 +1,26 @@
 """Loader untuk LLM client (dipakai untuk generation, contextualize, dan SCG)."""
-import os
+import os # buat akses environment variable (API_KEY) dari file .env
 
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv # buat load file .env ke environment variable
+from langchain_openai import ChatOpenAI # buat akses LLM OpenAI (ChatGPT) via API
 
 from src.utils.helpers import load_config
 
-load_dotenv()
+load_dotenv() 
 
-_llm = None
-_scg_llm = None
+_llm = None # menyimpan objek LLM untuk chatbot
+_scg_llm = None # menyimpan objek LLM untuk proses SCG
 
 
 def _build_llm() -> ChatOpenAI:
-    config = load_config()["llm"]
+    config = load_config()["llm"] 
     api_key = os.getenv("API_KEY")
+
+    print("=" * 50)
+    print("BASE_URL :", config["base_url"])
+    print("MODEL    :", config["model"])
+    print("API_KEY  :", repr(api_key))
+    print("=" * 50)
 
     # BUG FIX: sebelumnya nggak ada pengecekan API_KEY -- kalau .env belum
     # diisi, error baru muncul jauh di bawah (dari dalam httpx/OpenAI client)
@@ -35,19 +41,19 @@ def _build_llm() -> ChatOpenAI:
 
 
 def load_llm() -> ChatOpenAI:
-    """LLM untuk generation jawaban chatbot + contextualize pertanyaan lanjutan.
-
-    BUG FIX: sebelumnya function ini membuat instance ChatOpenAI BARU setiap
-    kali dipanggil (tidak ada caching), padahal dipanggil ulang tiap
-    pertanyaan -- boros dan tidak konsisten dengan pola singleton yang
-    sudah dipakai reranker.py. Sekarang di-cache seperti singleton.
     """
+    Mengambil objek LLM untuk chatbot.
+    Jika belum pernah dibuat, maka dibuat terlebih dahulu.
+    """
+
     global _llm
-    if _llm is None:
-        _llm = _build_llm()
+    # lazy loading: objek LLM baru dibuat jika belum ada
+    if _llm is None: 
+        _llm = _build_llm() 
+    # singleton: gunakan objek LLM yang sama untuk pemanggilan berikutnya
     return _llm
 
-
+# ini dipake buat di build scg db, indexing --> digunakan saat proses indexing SCG untuk menghasilkan synthetic context setiap chunk.
 def load_scg_llm() -> ChatOpenAI:
     """LLM untuk generate synthetic context saat indexing (SCG).
 
@@ -55,6 +61,8 @@ def load_scg_llm() -> ChatOpenAI:
     depan bisa pakai model/setting berbeda tanpa mengubah pemanggilnya.
     """
     global _scg_llm
+     # lazy loading: objek LLM baru dibuat jika belum ada
     if _scg_llm is None:
         _scg_llm = _build_llm()
+    # singleton: gunakan objek LLM yang sama untuk pemanggilan berikutnya
     return _scg_llm
