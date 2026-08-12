@@ -26,10 +26,13 @@ CHECKPOINT_PATH = config["paths"]["eval_checkpoint"]
 EVAL_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
     [
         ("system", SYSTEM_PROMPT),
-        ("human", "Pertanyaan: {question}"),
+        (
+            "human",
+            "CONTEXT:\n{context}\n\n"
+            "Pertanyaan: {question}",
+        ),
     ]
 )
-
 
 def is_record_complete(rec):
     """
@@ -169,8 +172,8 @@ def main():
     df_base = result_baseline.to_pandas()
     df_scg = result_scg.to_pandas()
 
-    df_base.to_excel("ragas_result_baseline.xlsx", index=False)
-    df_scg.to_excel("ragas_result_scg.xlsx", index=False)
+    df_base.to_excel("ragas_result_baseline_claude.xlsx", index=False)
+    df_scg.to_excel("ragas_result_scg_claude.xlsx", index=False)
 
     metric_names = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
     summary = pd.DataFrame({
@@ -179,11 +182,11 @@ def main():
         "SCG": [df_scg[m].mean() for m in metric_names],
     })
     summary["Selisih (SCG - Baseline)"] = summary["SCG"] - summary["Baseline"]
-    summary.to_excel("ragas_summary_comparison.xlsx", index=False)
+    summary.to_excel("ragas_summary_comparison_claude.xlsx", index=False)
 
     print("\n=== RINGKASAN PERBANDINGAN ===")
     print(summary.to_string(index=False))
-    print("\nFile hasil: ragas_result_baseline_scg.xlsx, ragas_result_scg_scg.xlsx, ragas_summary_comparison_scg.xlsx")
+    print("\nFile hasil: ragas_result_baseline_claude.xlsx, ragas_result_scg_claude.xlsx, ragas_summary_comparison_claude.xlsx")
 
 
 if __name__ == "__main__":

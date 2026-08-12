@@ -3,16 +3,18 @@ embedding:
 
 llm:
   base_url: https://api.cosmoshub.tech/v1
+  # base_url: https://9router-o5jfqowcef5e.jkt6.sumopod.my.id/v1
   # base_url: https://router.bynara.id/v1
   model: claude-sonnet-4.5
+  # model: deepseek-v4-pro
   # temperature: 0.5
   temperature: 0.2
-  request_timeout: 60
+  request_timeout: 90
   max_retries: 2
 
 chunking:
-  chunk_size: 500
-  chunk_overlap: 100
+  chunk_size: 800
+  chunk_overlap: 150
 
 retrieval:
   # Placeholder sampai scripts/test_threshold.py dijalankan setelah
@@ -26,7 +28,7 @@ retrieval:
   target_k: 5
 
 reranker:
-  model_name: BAAI/bge-reranker-base
+  model_name: BAAI/bge-reranker-v2-m3
 
 paths:
   data_pdf: ./data/pdf
@@ -34,7 +36,7 @@ paths:
   chroma_scg: ./vectorstore/chroma_db_scg
   scg_checkpoint: ./vectorstore/scg_checkpoint.jsonl
   eval_checkpoint: ./vectorstore/eval_checkpoint_scg.jsonl
-  ground_truth: ground_truth_chatbot - Copy.xlsx
+  ground_truth: ground_truth_chatbot - Copy - Copy.xlsx
 
 conversation:
   max_history_turns: 10

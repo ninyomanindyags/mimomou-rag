@@ -8,15 +8,10 @@ from src.utils.helpers import load_config
 
 
 def clean_text(text: str) -> str:
-    """
-    Membersihkan hasil ekstraksi PDF dengan:
-    - mengubah newline menjadi spasi,
-    - menghapus whitespace yang berlebihan.
-    """
-    text = text.replace("\n", " ") # ganti karakter enter jd spaso
-    text = re.sub(r"\s+", " ", text) # mengubah whitespace berlebihan jd 1 spasi
-    return text.strip() # mengubah spasi di awal/akhir
-
+    text = re.sub(r"\n{2,}", "\n\n", text)          # rapikan newline ganda, JANGAN dihapus
+    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)     # newline tunggal (word-wrap) -> spasi
+    text = re.sub(r"[ \t]+", " ", text)              # rapikan spasi/tab berlebih
+    return text.strip()
 
 def load_pdfs(data_path: str | None = None):
     """

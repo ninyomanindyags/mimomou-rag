@@ -38,12 +38,12 @@ METRICS = {
 
 FILES = [
     (
-        ROOT / "ragas_result_baseline.xlsx",
-        ROOT / "ragas_result_baseline_resumed.xlsx",
+        ROOT / "ragas_result_baseline_claude.xlsx",
+        ROOT / "ragas_result_baseline_deepseek.xlsx",
     ),
     (
         ROOT / "ragas_result_scg.xlsx",
-        ROOT / "ragas_result_scg_resumed.xlsx",
+        ROOT / "ragas_result_scg_deepseek.xlsx",
     ),
 ]
 

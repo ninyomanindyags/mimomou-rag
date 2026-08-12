@@ -5,8 +5,13 @@ from sentence_transformers import CrossEncoder
 
 from src.utils.helpers import load_config
 
+
 _reranker = None
 
+
+# ============================================================
+# LOAD RERANKER
+# ============================================================
 
 def load_reranker():
     global _reranker
@@ -17,6 +22,10 @@ def load_reranker():
 
     return _reranker
 
+
+# ============================================================
+# RERANKING
+# ============================================================
 
 def rerank(query, documents, top_n):
     if not documents:
@@ -48,12 +57,26 @@ def rerank(query, documents, top_n):
             f"[Reranker Error] {error}. "
             "Menggunakan urutan similarity search."
         )
+
         return documents[:top_n]
 
 
-# Fungsi ini tetap dipertahankan.
-# Tidak dipakai pada eksperimen ini, tetapi jangan dihapus
-# supaya nanti bisa kembali ke pipeline lama dengan mudah.
+# ============================================================
+# MAPPING SYNTHETIC -> ORIGINAL
+# ============================================================
+#
+# Digunakan pada mode SCG.
+#
+# Synthetic context digunakan untuk:
+# 1. similarity search
+# 2. reranking
+#
+# Setelah synthetic terpilih, chunk_id digunakan untuk
+# mengambil kembali original chunk yang sesuai.
+#
+# Original chunk inilah yang nantinya dikirim ke LLM.
+# ============================================================
+
 def get_original_documents_by_chunk_ids(
     db,
     chunk_ids,
@@ -122,20 +145,28 @@ def get_original_documents_by_chunk_ids(
     return selected_documents
 
 
+# ============================================================
+# PRINT RESULTS
+# ============================================================
+
 def print_results(title, results):
     print(f"\n{title}")
 
     for index, item in enumerate(results, start=1):
+
         if isinstance(item, tuple):
             document, score = item
+
             print(
                 f"{index}. "
                 f"chunk_id={document.metadata.get('chunk_id')} | "
                 f"type={document.metadata.get('source_type')} | "
                 f"score={float(score):.4f}"
             )
+
         else:
             document = item
+
             print(
                 f"{index}. "
                 f"chunk_id={document.metadata.get('chunk_id')} | "
@@ -143,12 +174,27 @@ def print_results(title, results):
             )
 
 
+# ============================================================
+# RETRIEVE DOCUMENTS
+# ============================================================
+
 def retrieve_docs(
     db,
     mode,
     question,
 ):
     config = load_config()["retrieval"]
+
+    # --------------------------------------------------------
+    # FETCH K
+    # --------------------------------------------------------
+    #
+    # Baseline:
+    # similarity search dilakukan terhadap ORIGINAL.
+    #
+    # SCG:
+    # similarity search dilakukan terhadap SYNTHETIC.
+    # --------------------------------------------------------
 
     fetch_key = (
         "fetch_k_scg"
@@ -170,7 +216,12 @@ def retrieve_docs(
     print(f"QUESTION : {question}")
     print(f"FETCH_K  : {fetch_k}")
     print(f"TARGET_K : {target_k}")
+    print(f"SOURCE   : {source_type}")
     print("=" * 60)
+
+    # ========================================================
+    # SIMILARITY SEARCH
+    # ========================================================
 
     start = time.perf_counter()
 
@@ -189,6 +240,7 @@ def retrieve_docs(
         elapsed = time.perf_counter() - start
 
         print(f"[Retrieval Error] {error}")
+
         print(
             f"[SIMILARITY TIME] {mode}: "
             f"{elapsed:.4f} detik"
@@ -207,10 +259,18 @@ def retrieve_docs(
         print("[Retrieval] Tidak ada hasil.")
         return []
 
+    # --------------------------------------------------------
+    # HASIL SIMILARITY SEARCH
+    # --------------------------------------------------------
+
     print_results(
         f"HASIL SIMILARITY SEARCH ({mode})",
         similarity_results,
     )
+
+    # ========================================================
+    # RERANKING
+    # ========================================================
 
     candidates = [
         document
@@ -223,38 +283,229 @@ def retrieve_docs(
         top_n=target_k,
     )
 
-    # ==========================
+    # ========================================================
+    # DEBUG HASIL RERANKING
+    # ========================================================
+
+    print("\n" + "=" * 80)
+    print(f"HASIL RERANKING - {mode}")
+    print("=" * 80)
+
+    for i, doc in enumerate(
+        reranked_documents,
+        start=1,
+    ):
+        print(
+            f"\n===== Document {i} ====="
+        )
+
+        print(
+            f"chunk_id    : "
+            f"{doc.metadata.get('chunk_id')}"
+        )
+
+        print(
+            f"source_type : "
+            f"{doc.metadata.get('source_type')}"
+        )
+
+        print("-" * 80)
+
+        print(doc.page_content)
+
+    # ========================================================
+    # DEBUG KE FILE
+    # ========================================================
+
+    with open(
+        "debug_retrieval.txt",
+        "a",
+        encoding="utf-8",
+    ) as f:
+
+        f.write(
+            f"\n\nQUESTION: {question}\n"
+        )
+
+        f.write(
+            f"MODE: {mode}\n"
+        )
+
+        f.write(
+            f"FETCH_K: {fetch_k}\n"
+        )
+
+        f.write(
+            f"TARGET_K: {target_k}\n"
+        )
+
+        f.write("=" * 80 + "\n")
+
+        for i, doc in enumerate(
+            reranked_documents,
+            start=1,
+        ):
+            f.write(
+                f"\n===== Document {i} =====\n"
+            )
+
+            f.write(
+                f"chunk_id    : "
+                f"{doc.metadata.get('chunk_id')}\n"
+            )
+
+            f.write(
+                f"source_type : "
+                f"{doc.metadata.get('source_type')}\n\n"
+            )
+
+            f.write(doc.page_content)
+            f.write("\n")
+
+    # ========================================================
     # BASELINE
-    # ==========================
+    # ========================================================
+    #
+    # Baseline:
+    #
+    # original
+    #    ↓
+    # similarity search
+    #    ↓
+    # fetch_k kandidat
+    #    ↓
+    # reranking
+    #    ↓
+    # target_k
+    #    ↓
+    # original ke LLM
+    #
+    # ========================================================
+
     if mode != "SCG":
+
         print_results(
-            "HASIL RERANK BASELINE - ORIGINAL UNTUK LLM",
+            "FINAL CONTEXT BASELINE - ORIGINAL UNTUK LLM",
             reranked_documents,
         )
 
+        print("\n" + "=" * 80)
+        print("FINAL CONTEXT UNTUK LLM - BASELINE")
+        print("=" * 80)
+
+        for i, doc in enumerate(
+            reranked_documents,
+            start=1,
+        ):
+            print(
+                f"\n===== Document {i} ====="
+            )
+
+            print(
+                f"chunk_id    : "
+                f"{doc.metadata.get('chunk_id')}"
+            )
+
+            print(
+                f"source_type : "
+                f"{doc.metadata.get('source_type')}"
+            )
+
+            print("-" * 80)
+
+            print(doc.page_content)
+
         return reranked_documents
 
-    # ==========================
-    # SCG (VERSI EKSPERIMEN)
-    # Synthetic langsung dikirim ke LLM
-    # ==========================
+    # ========================================================
+    # SCG
+    # ========================================================
+    #
+    # Untuk sementara jangan jadikan ini fokus.
+    #
+    # Alur:
+    #
+    # synthetic
+    #    ↓
+    # similarity search
+    #    ↓
+    # reranking
+    #    ↓
+    # chunk_id
+    #    ↓
+    # mapping ke original
+    #    ↓
+    # original ke LLM
+    #
+    # ========================================================
 
     print_results(
-        "HASIL RERANK SCG - SYNTHETIC UNTUK LLM",
+        "HASIL RERANK SCG - SYNTHETIC",
         reranked_documents,
     )
 
-    final_documents = []
+    # --------------------------------------------------------
+    # AMBIL CHUNK ID
+    # --------------------------------------------------------
 
-    for doc in reranked_documents:
-        final_documents.append(
-            Document(
-                page_content=doc.page_content,
-                metadata={
-                    **doc.metadata,
-                    "retrieval_source_type": "synthetic",
-                },
-            )
+    chunk_ids = [
+        doc.metadata.get("chunk_id")
+        for doc in reranked_documents
+        if doc.metadata.get("chunk_id") is not None
+    ]
+
+    print("\n" + "=" * 80)
+    print("MAPPING SCG SYNTHETIC -> ORIGINAL")
+    print("=" * 80)
+
+    print(
+        f"Chunk ID terpilih: {chunk_ids}"
+    )
+
+    # --------------------------------------------------------
+    # MAPPING KE ORIGINAL
+    # --------------------------------------------------------
+
+    original_documents = (
+        get_original_documents_by_chunk_ids(
+            db=db,
+            chunk_ids=chunk_ids,
+        )
+    )
+
+    # ========================================================
+    # FINAL CONTEXT SCG
+    # ========================================================
+
+    print_results(
+        "FINAL CONTEXT SCG - ORIGINAL UNTUK LLM",
+        original_documents,
+    )
+
+    print("\n" + "=" * 80)
+    print("FINAL CONTEXT UNTUK LLM - SCG")
+    print("=" * 80)
+
+    for i, doc in enumerate(
+        original_documents,
+        start=1,
+    ):
+        print(
+            f"\n===== Document {i} ====="
         )
 
-    return final_documents
+        print(
+            f"chunk_id    : "
+            f"{doc.metadata.get('chunk_id')}"
+        )
+
+        print(
+            f"source_type : "
+            f"{doc.metadata.get('source_type')}"
+        )
+
+        print("-" * 80)
+
+        print(doc.page_content)
+
+    return original_documents

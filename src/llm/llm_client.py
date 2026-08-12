@@ -10,7 +10,7 @@ load_dotenv()
 
 _llm = None # menyimpan objek LLM untuk chatbot
 _scg_llm = None # menyimpan objek LLM untuk proses SCG
-
+_judge_llm = None
 
 def _build_llm() -> ChatOpenAI:
     config = load_config()["llm"] 
@@ -66,3 +66,27 @@ def load_scg_llm() -> ChatOpenAI:
         _scg_llm = _build_llm()
     # singleton: gunakan objek LLM yang sama untuk pemanggilan berikutnya
     return _scg_llm
+
+def load_judge_llm() -> ChatOpenAI:
+    """LLM khusus sebagai evaluator/judge untuk RAGAS."""
+    global _judge_llm
+
+    if _judge_llm is None:
+        config = load_config()["llm"]
+        api_key = os.getenv("API_KEY")
+
+        if not api_key:
+            raise EnvironmentError(
+                "API_KEY tidak ditemukan. Isi API_KEY=... di file .env."
+            )
+
+        _judge_llm = ChatOpenAI(
+            base_url=config["base_url"],
+            api_key=api_key,
+            model=config["judge_model"],
+            temperature=0,
+            request_timeout=180,
+            max_retries=3,
+        )
+
+    return _judge_llm
