@@ -16,14 +16,48 @@ __pycache__/
 logs/*.log
 
 # Hasil evaluasi
+ragas_result_baseline_deepseek.xlsx
+ragas_result_scg_deepseek.xlsx
+ragas_result_baseline_resumed.xlsx
+ragas_result_scg_resumed.xlsx
 ragas_result_baseline.xlsx
 ragas_result_scg.xlsx
 ragas_summary_comparison.xlsx
-vectorstore/eval_checkpoint*.jsonl
+ragas_summary_comparison_final.xlsx
+vectorstore/eval_checkpoint.jsonl
 vectorstore/scg_checkpoint.jsonl
+vectorstore/eval_checkpoint - Copy.jsonl
+vectorstore/eval_checkpoint - Copy - Copy.jsonl
+vectorstore/scg_checkpoint - Copy.jsonl
+vectorstore/eval_checkpoint_scg.jsonl
+debug_retrieval.txt
+debug_scg.txt
+requirements_old.txt
+test_api.py
+streamlit_app.py
+demo_showcase.py
+
 
 # Data mentah (opsional, uncomment kalau PDF tidak mau di-commit)
 # data/pdf/*
+ground_truth_chatbot - Copy - Copy.xlsx
+hasil_bab4_fiks.txt
+hasil_bab4.txt
+hasil_chunking.xlsx
+main.py
+Procfile
+vectorstore/chroma_db_500
+vectorstore/chroma_db_scg_500
+tests
+scripts/ragas_nan.py
+scripts/ragas_nan.py
+scripts/recalculate_ragas_summary.py
+scripts/recalculate_ragas.py
+scripts/report_bab4.py
+scripts/resume_ragas_to_new_files.py
+scripts/test_chunking.py
+scripts/wilcoxon_test.py
+scripts/resume_ragas.py
 
 .DS_Store
 
