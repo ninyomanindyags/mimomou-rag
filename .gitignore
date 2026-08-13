@@ -34,7 +34,6 @@ debug_retrieval.txt
 debug_scg.txt
 requirements_old.txt
 test_api.py
-streamlit_app.py
 demo_showcase.py
 
 
@@ -58,7 +57,11 @@ scripts/resume_ragas_to_new_files.py
 scripts/test_chunking.py
 scripts/wilcoxon_test.py
 scripts/resume_ragas.py
+~$*.xlsx
+hasil_hasil_bab4.txt
+
 
 .DS_Store
 
-streamlit_app.py
+frontend
+
