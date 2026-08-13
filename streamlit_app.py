@@ -22,7 +22,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-st.set_page_config(page_title="MimoMou", page_icon="\U0001F4B0")
+st.set_page_config(
+    page_title="MimoMou",
+    page_icon="\U0001F4B0",
+    layout="centered",
+)
 
 
 @st.cache_resource(show_spinner=False)
@@ -37,11 +41,25 @@ def reset_chat():
     st.session_state.messages = []
 
 
-with st.sidebar:
-    st.title("MimoMou")
-    st.caption("Chatbot edukasi literasi keuangan digital")
-    mode = st.radio("Mode retrieval", ["SCG", "Baseline"], index=0)
-    st.button("Mulai obrolan baru", on_click=reset_chat, use_container_width=True)
+# ============================================================
+# HEADER
+# ============================================================
+
+st.title("💰 MimoMou")
+st.caption("Chatbot edukasi literasi keuangan digital")
+
+
+# ============================================================
+# MODE RETRIEVAL
+# ============================================================
+
+mode = st.radio(
+    "Mode retrieval",
+    ["SCG", "Baseline"],
+    index=0,
+    horizontal=True,
+)
+
 
 # Reset histori otomatis kalau mode diganti, biar histori percakapan
 # (dipakai untuk contextualize_question) tidak mencampur konteks dari
@@ -50,18 +68,47 @@ if st.session_state.get("mode") != mode:
     st.session_state.mode = mode
     reset_chat()
 
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+
+# ============================================================
+# TOMBOL OBROLAN BARU
+# ============================================================
+
+st.button(
+    "🔄 Mulai obrolan baru",
+    on_click=reset_chat,
+    use_container_width=True,
+)
+
+
+# ============================================================
+# LOAD RAG
+# ============================================================
+
 ask = get_ask_fn(mode)
+
+
+# ============================================================
+# CHAT
+# ============================================================
 
 if not st.session_state.messages:
     st.chat_message("assistant").markdown(OPENING_MESSAGE)
 
+
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).markdown(msg["content"])
 
+
 question = st.chat_input("Tulis pertanyaanmu di sini...")
+
 
 if question:
     st.chat_message("user").markdown(question)
@@ -69,8 +116,20 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("MimoMou sedang mengetik..."):
             answer = ask(question, st.session_state.messages)
+
         st.markdown(answer)
 
-    st.session_state.messages.append({"role": "user", "content": question})
-    st.session_state.messages.append({"role": "assistant", "content": answer})
-    logging.info("[%s] Q: %s | A: %s", mode, question, answer)
+    st.session_state.messages.append(
+        {"role": "user", "content": question}
+    )
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": answer}
+    )
+
+    logging.info(
+        "[%s] Q: %s | A: %s",
+        mode,
+        question,
+        answer,
+    )
