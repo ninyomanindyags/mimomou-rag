@@ -7,7 +7,7 @@ from src.prompts.prompt_templates import SYSTEM_PROMPT
 from src.llm.llm_client import load_llm
 from src.vectordb.vector_store import load_vector_store
 from src.retrieval.retriever import retrieve_docs
-from src.utils.helpers import format_docs, load_config
+from src.utils.helpers import format_docs
 
 
 FALLBACK_MESSAGE = (
@@ -42,7 +42,7 @@ PERTANYAAN:
 
     chain = chat_template | chat_model | output_parser
 
-    def ask(question, chat_history=None):
+    def ask(question):
         # Cegah pertanyaan kosong
         if not question or not question.strip():
             return FALLBACK_MESSAGE
