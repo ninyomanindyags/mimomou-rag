@@ -11,6 +11,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.api.routes import init_rag_chain
+from src.prompts.prompt_templates import OPENING_MESSAGE
 
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -64,6 +65,8 @@ ask = get_ask_fn(mode)
 # ============================================================
 # CHAT
 # ============================================================
+
+st.chat_message("assistant").markdown(OPENING_MESSAGE)
 
 question = st.chat_input("Tulis pertanyaanmu di sini...")
 
