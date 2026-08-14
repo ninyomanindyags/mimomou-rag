@@ -35,6 +35,10 @@ def get_ask_fn(mode: str):
     return init_rag_chain(mode)
 
 
+def reset_chat():
+    st.session_state.messages = []
+
+
 # ============================================================
 # HEADER
 # ============================================================
@@ -55,6 +59,31 @@ mode = st.radio(
 )
 
 
+# Reset histori ketika mode retrieval diganti
+if st.session_state.get("mode") != mode:
+    st.session_state.mode = mode
+    reset_chat()
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+
+# ============================================================
+# TOMBOL OBROLAN BARU
+# ============================================================
+
+st.button(
+    "🔄 Mulai obrolan baru",
+    on_click=reset_chat,
+    use_container_width=True,
+)
+
+
 # ============================================================
 # LOAD RAG
 # ============================================================
@@ -66,9 +95,16 @@ ask = get_ask_fn(mode)
 # CHAT
 # ============================================================
 
-st.chat_message("assistant").markdown(OPENING_MESSAGE)
+if not st.session_state.messages:
+    st.chat_message("assistant").markdown(OPENING_MESSAGE)
+
+
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).markdown(msg["content"])
+
 
 question = st.chat_input("Tulis pertanyaanmu di sini...")
+
 
 if question:
     st.chat_message("user").markdown(question)
@@ -78,6 +114,14 @@ if question:
             answer = ask(question)
 
         st.markdown(answer)
+
+    st.session_state.messages.append(
+        {"role": "user", "content": question}
+    )
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": answer}
+    )
 
     logging.info(
         "[%s] Q: %s | A: %s",
