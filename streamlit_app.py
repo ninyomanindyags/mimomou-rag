@@ -53,7 +53,7 @@ st.caption("Chatbot edukasi literasi keuangan digital")
 
 mode = st.radio(
     "Mode retrieval",
-    ["SCG", "Baseline"],
+    ["SCG_CONTEXTUAL_SHORT", "Baseline"],
     index=0,
     horizontal=True,
 )

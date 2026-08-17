@@ -249,3 +249,32 @@ Konteks sesudahnya (referensi saja, jangan dijelaskan ulang):
 =========================
 """
 )
+
+
+#buat coba yang contextual punya anthropic
+SCG_PROMPT_SHORT = PromptTemplate.from_template(
+"""
+Konteks sebelumnya (referensi saja, jangan dijelaskan ulang):
+{prev_context}
+
+CHUNK UTAMA:
+{context}
+
+Konteks sesudahnya (referensi saja, jangan dijelaskan ulang):
+{next_context}
+
+=========================
+Tugas Anda: berikan konteks singkat (50-100 token) untuk menempatkan
+CHUNK UTAMA dalam keseluruhan dokumen, dengan tujuan memperbaiki hasil
+retrieval terhadap chunk ini.
+
+ATURAN:
+- Fokus HANYA pada CHUNK UTAMA. Konteks sebelum/sesudah cuma referensi.
+- Gunakan HANYA informasi yang ada di CHUNK UTAMA atau konteks
+  sekitarnya, jangan menambah fakta baru.
+- Jangan mengubah angka, nama produk, biaya, bunga, maupun kebijakan.
+- Jawab HANYA dengan konteks singkatnya saja, tanpa basa-basi, tanpa
+  format tambahan, tanpa kalimat pembuka seperti "Berikut adalah...".
+- Gunakan bahasa Indonesia yang natural.
+"""
+)

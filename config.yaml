@@ -5,8 +5,8 @@ llm:
   base_url: https://api.cosmoshub.tech/v1
   # base_url: https://9router-o5jfqowcef5e.jkt6.sumopod.my.id/v1
   # base_url: https://router.bynara.id/v1
-  model: claude-sonnet-4.5
-  # model: deepseek-v4-pro
+  # model: claude-sonnet-4.5
+  model: deepseek-v4-pro
   # temperature: 0.5
   temperature: 0.2
   request_timeout: 90
@@ -34,9 +34,22 @@ paths:
   data_pdf: ./data/pdf
   chroma_baseline: ./vectorstore/chroma_db
   chroma_scg: ./vectorstore/chroma_db_scg
+  chroma_scg_contextual: ./vectorstore/chroma_db_scg_contextual
+  chroma_scg_contextual_short: ./vectorstore/chroma_db_scg_contextual_short # <- baru
   scg_checkpoint: ./vectorstore/scg_checkpoint.jsonl
+  scg_checkpoint_short: ./vectorstore/scg_checkpoint_short.jsonl # <- baru
   eval_checkpoint: ./vectorstore/eval_checkpoint_scg.jsonl
   ground_truth: ground_truth_chatbot - Copy - Copy.xlsx
+  ground_truth_anthropic: ground_truth_anthropic.xlsx
+  eval_checkpoint_baseline: ./vectorstore/eval_baseline.jsonl
+  eval_checkpoint_scg_contextual: ./vectorstore/eval_scg_contextual.jsonl
+  ragas_baseline_deepseek: ragas_baseline_deepseek.xlsx
+  ragas_scg_contextual_deepseek: ragas_scg_contextual_deepseek.xlsx
+  ragas_contextual_comparison_deepseek: ragas_contextual_comparison_deepseek.xlsx
 
 conversation:
   max_history_turns: 10
+
+# BM25 Hybrid Retrieval
+fusion_method: rrf
+rrf_k: 60

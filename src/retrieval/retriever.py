@@ -1,10 +1,26 @@
-import time
+"""Retrieval untuk mode Baseline dan SCG_CONTEXTUAL_SHORT.
 
-from langchain_core.documents import Document
-from sentence_transformers import CrossEncoder
+Baseline:
+    Original chunk
+    -> Semantic Search
+    -> CrossEncoder Reranking
+    -> Original chunk dikirim ke LLM
+
+SCG_CONTEXTUAL_SHORT:
+    Synthetic Context + Original Chunk
+    -> Semantic Search + BM25
+    -> RRF
+    -> CrossEncoder Reranking
+    -> Contextualized chunk dikirim ke LLM
+
+BM25 dan RRF hanya digunakan pada mode SCG_CONTEXTUAL_SHORT.
+"""
+
+import time
+from collections import defaultdict
 
 from src.utils.helpers import load_config
-
+from src.vectordb.vector_store import load_bm25_index
 
 _reranker = None
 
@@ -14,11 +30,15 @@ _reranker = None
 # ============================================================
 
 def load_reranker():
+    """Load model CrossEncoder."""
+
     global _reranker
 
     if _reranker is None:
+        from sentence_transformers import CrossEncoder
+
         config = load_config()["reranker"]
-        _reranker = CrossEncoder(config["model_name"])
+        _reranker = CrossEncoder(config["model_name"], device="cpu")    
 
     return _reranker
 
@@ -28,6 +48,8 @@ def load_reranker():
 # ============================================================
 
 def rerank(query, documents, top_n):
+    """Reranking dokumen menggunakan CrossEncoder."""
+
     if not documents:
         return []
 
@@ -55,94 +77,10 @@ def rerank(query, documents, top_n):
     except Exception as error:
         print(
             f"[Reranker Error] {error}. "
-            "Menggunakan urutan similarity search."
+            "Menggunakan urutan hasil retrieval."
         )
 
         return documents[:top_n]
-
-
-# ============================================================
-# MAPPING SYNTHETIC -> ORIGINAL
-# ============================================================
-#
-# Digunakan pada mode SCG.
-#
-# Synthetic context digunakan untuk:
-# 1. similarity search
-# 2. reranking
-#
-# Setelah synthetic terpilih, chunk_id digunakan untuk
-# mengambil kembali original chunk yang sesuai.
-#
-# Original chunk inilah yang nantinya dikirim ke LLM.
-# ============================================================
-
-def get_original_documents_by_chunk_ids(
-    db,
-    chunk_ids,
-):
-    if not chunk_ids:
-        return []
-
-    try:
-        data = db.get(
-            where={
-                "source_type": "original",
-            },
-            include=[
-                "documents",
-                "metadatas",
-            ],
-        )
-
-    except Exception as error:
-        print(f"[Mapping Error] {error}")
-        return []
-
-    documents = data.get("documents", [])
-    metadatas = data.get("metadatas", [])
-
-    original_by_chunk_id = {}
-
-    for content, metadata in zip(
-        documents,
-        metadatas,
-    ):
-        if not metadata:
-            continue
-
-        chunk_id = metadata.get("chunk_id")
-
-        if chunk_id is None:
-            continue
-
-        original_by_chunk_id[str(chunk_id)] = Document(
-            page_content=content,
-            metadata={
-                **metadata,
-                "source_type": "original",
-                "retrieval_source_type": "synthetic",
-            },
-        )
-
-    selected_documents = []
-    used_chunk_ids = set()
-
-    for chunk_id in chunk_ids:
-        key = str(chunk_id)
-
-        if key in used_chunk_ids:
-            continue
-
-        document = original_by_chunk_id.get(key)
-
-        if document is None:
-            continue
-
-        used_chunk_ids.add(key)
-        selected_documents.append(document)
-
-    return selected_documents
 
 
 # ============================================================
@@ -150,7 +88,15 @@ def get_original_documents_by_chunk_ids(
 # ============================================================
 
 def print_results(title, results):
-    print(f"\n{title}")
+    """Menampilkan chunk ID dan score hasil retrieval."""
+
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
+
+    if not results:
+        print("Tidak ada hasil.")
+        return
 
     for index, item in enumerate(results, start=1):
 
@@ -160,7 +106,6 @@ def print_results(title, results):
             print(
                 f"{index}. "
                 f"chunk_id={document.metadata.get('chunk_id')} | "
-                f"type={document.metadata.get('source_type')} | "
                 f"score={float(score):.4f}"
             )
 
@@ -169,149 +114,372 @@ def print_results(title, results):
 
             print(
                 f"{index}. "
-                f"chunk_id={document.metadata.get('chunk_id')} | "
-                f"type={document.metadata.get('source_type')}"
+                f"chunk_id={document.metadata.get('chunk_id')}"
             )
+
+
+# ============================================================
+# BM25 SEARCH
+# ============================================================
+
+def bm25_search(question, mode, k):
+    """BM25 hanya digunakan pada SCG_CONTEXTUAL_SHORT."""
+
+    if mode != "SCG_CONTEXTUAL_SHORT":
+        return []
+
+    try:
+        bm25, documents, _ = load_bm25_index(mode)
+
+        # Tokenisasi query
+        tokenized_query = question.split()
+
+        # Hitung BM25 score
+        scores = bm25.get_scores(tokenized_query)
+
+        # Ambil top-k dokumen
+        top_indices = sorted(
+            range(len(scores)),
+            key=lambda i: scores[i],
+            reverse=True,
+        )[:k]
+
+        return [
+            (documents[i], float(scores[i]))
+            for i in top_indices
+        ]
+
+    except FileNotFoundError as error:
+        print(f"[BM25 Warning] {error}")
+        return []
+
+    except Exception as error:
+        print(f"[BM25 Error] {error}")
+        return []
+
+
+# ============================================================
+# RRF FUSION
+# ============================================================
+
+def fuse_results(
+    semantic_results,
+    bm25_results,
+    k_rrf=60,
+):
+    """
+    Menggabungkan hasil Semantic Search dan BM25
+    menggunakan Reciprocal Rank Fusion (RRF).
+
+    RRF(d) = Σ 1 / (k + r(d))
+    """
+
+    fused_scores = defaultdict(float)
+    documents = {}
+
+    # --------------------------------------------------------
+    # Semantic Search
+    # --------------------------------------------------------
+
+    for rank, (document, _) in enumerate(
+        semantic_results,
+        start=1,
+    ):
+        chunk_id = document.metadata.get("chunk_id")
+
+        if chunk_id is None:
+            continue
+
+        fused_scores[chunk_id] += (
+            1.0 / (k_rrf + rank)
+        )
+
+        documents[chunk_id] = document
+
+    # --------------------------------------------------------
+    # BM25
+    # --------------------------------------------------------
+
+    for rank, (document, _) in enumerate(
+        bm25_results,
+        start=1,
+    ):
+        chunk_id = document.metadata.get("chunk_id")
+
+        if chunk_id is None:
+            continue
+
+        fused_scores[chunk_id] += (
+            1.0 / (k_rrf + rank)
+        )
+
+        documents[chunk_id] = document
+
+    # --------------------------------------------------------
+    # Sort berdasarkan skor RRF
+    # --------------------------------------------------------
+
+    ranked_chunk_ids = sorted(
+        fused_scores.keys(),
+        key=lambda chunk_id: fused_scores[chunk_id],
+        reverse=True,
+    )
+
+    return [
+        documents[chunk_id]
+        for chunk_id in ranked_chunk_ids
+    ]
 
 
 # ============================================================
 # RETRIEVE DOCUMENTS
 # ============================================================
 
-def retrieve_docs(
-    db,
-    mode,
-    question,
-):
+def retrieve_docs(db, mode, question):
+    """
+    Retrieval berdasarkan mode.
+
+    Baseline:
+        Semantic Search
+        -> CrossEncoder
+        -> Original chunk
+
+    SCG_CONTEXTUAL_SHORT:
+        Semantic Search + BM25
+        -> RRF
+        -> CrossEncoder
+        -> Contextualized chunk
+    """
+
     config = load_config()["retrieval"]
 
-    # --------------------------------------------------------
-    # FETCH K
-    # --------------------------------------------------------
-    #
-    # Baseline:
-    # similarity search dilakukan terhadap ORIGINAL.
-    #
-    # SCG:
-    # similarity search dilakukan terhadap SYNTHETIC.
-    # --------------------------------------------------------
+    # ========================================================
+    # CONFIGURATION
+    # ========================================================
 
-    fetch_key = (
-        "fetch_k_scg"
-        if mode == "SCG"
-        else "fetch_k_baseline"
-    )
+    if mode == "Baseline":
 
-    fetch_k = config[fetch_key]
+        fetch_k = config["fetch_k_baseline"]
+
+    elif mode == "SCG_CONTEXTUAL_SHORT":
+
+        fetch_k = config["fetch_k_scg"]
+
+    else:
+
+        raise ValueError(
+            f"Mode tidak didukung: {mode}. "
+            "Gunakan 'Baseline' atau "
+            "'SCG_CONTEXTUAL_SHORT'."
+        )
+
     target_k = config["target_k"]
 
-    source_type = (
-        "synthetic"
-        if mode == "SCG"
-        else "original"
-    )
+    # ========================================================
+    # START
+    # ========================================================
 
-    print("\n" + "=" * 60)
-    print(f"MODE     : {mode}")
+    print("\n\n" + "#" * 80)
+    print(f"RETRIEVAL START - {mode}")
+    print("#" * 80)
+
     print(f"QUESTION : {question}")
     print(f"FETCH_K  : {fetch_k}")
     print(f"TARGET_K : {target_k}")
-    print(f"SOURCE   : {source_type}")
-    print("=" * 60)
 
     # ========================================================
-    # SIMILARITY SEARCH
+    # 1. SEMANTIC SEARCH
     # ========================================================
+
+    print("\n" + "=" * 80)
+    print("1. SEMANTIC SEARCH")
+    print("=" * 80)
 
     start = time.perf_counter()
 
     try:
-        similarity_results = (
+        semantic_results = (
             db.similarity_search_with_relevance_scores(
                 question,
                 k=fetch_k,
-                filter={
-                    "source_type": source_type,
-                },
             )
         )
 
     except Exception as error:
-        elapsed = time.perf_counter() - start
 
         print(f"[Retrieval Error] {error}")
-
-        print(
-            f"[SIMILARITY TIME] {mode}: "
-            f"{elapsed:.4f} detik"
-        )
 
         return []
 
     elapsed = time.perf_counter() - start
 
     print(
-        f"[SIMILARITY TIME] {mode}: "
-        f"{elapsed:.4f} detik"
+        f"[SEMANTIC TIME] "
+        f"{mode}: {elapsed:.4f} detik"
     )
 
-    if not similarity_results:
-        print("[Retrieval] Tidak ada hasil.")
+    if not semantic_results:
+
+        print(
+            "[Retrieval] "
+            "Tidak ada hasil semantic search."
+        )
+
         return []
 
-    # --------------------------------------------------------
-    # HASIL SIMILARITY SEARCH
-    # --------------------------------------------------------
-
     print_results(
-        f"HASIL SIMILARITY SEARCH ({mode})",
-        similarity_results,
+        "CHUNK HASIL SEMANTIC SEARCH",
+        semantic_results,
     )
 
     # ========================================================
-    # RERANKING
+    # BASELINE
     # ========================================================
 
-    candidates = [
-        document
-        for document, _ in similarity_results
-    ]
+    if mode == "Baseline":
 
-    reranked_documents = rerank(
+        # Baseline tidak menggunakan BM25 dan RRF.
+        candidates = [
+            document
+            for document, _ in semantic_results
+        ]
+
+    # ========================================================
+    # SCG_CONTEXTUAL_SHORT
+    # ========================================================
+
+    else:
+
+        # ====================================================
+        # 2. BM25 SEARCH
+        # ====================================================
+
+        print("\n" + "=" * 80)
+        print("2. BM25 SEARCH")
+        print("=" * 80)
+
+        start = time.perf_counter()
+
+        bm25_results = bm25_search(
+            question,
+            mode,
+            k=fetch_k,
+        )
+
+        elapsed = time.perf_counter() - start
+
+        print(
+            f"[BM25 TIME] "
+            f"{mode}: {elapsed:.4f} detik"
+        )
+
+        print_results(
+            "CHUNK HASIL BM25",
+            bm25_results,
+        )
+
+        # ====================================================
+        # 3. RRF FUSION
+        # ====================================================
+
+        print("\n" + "=" * 80)
+        print("3. RRF FUSION")
+        print("=" * 80)
+
+        if bm25_results:
+
+            candidates = fuse_results(
+                semantic_results,
+                bm25_results,
+            )
+
+            print(
+                "Semantic Search + BM25 "
+                "digabungkan menggunakan RRF."
+            )
+
+        else:
+
+            print(
+                "BM25 tidak menghasilkan data. "
+                "Menggunakan hasil Semantic Search."
+            )
+
+            candidates = [
+                document
+                for document, _ in semantic_results
+            ]
+
+        print_results(
+            "CHUNK HASIL RRF",
+            candidates,
+        )
+
+    # ========================================================
+    # CROSSENCODER RERANKING
+    # ========================================================
+
+    step_number = (
+        "2"
+        if mode == "Baseline"
+        else "4"
+    )
+
+    print("\n" + "=" * 80)
+    print(f"{step_number}. CROSSENCODER RERANKING")
+    print("=" * 80)
+
+    start = time.perf_counter()
+
+    final_documents = rerank(
         question,
         candidates,
         top_n=target_k,
     )
 
+    elapsed = time.perf_counter() - start
+
+    print(
+        f"[RERANKER TIME] "
+        f"{mode}: {elapsed:.4f} detik"
+    )
+
+    print_results(
+        "CHUNK HASIL CROSSENCODER",
+        final_documents,
+    )
+
     # ========================================================
-    # DEBUG HASIL RERANKING
+    # FINAL CONTEXT UNTUK LLM
     # ========================================================
+
+    final_step = (
+        "3"
+        if mode == "Baseline"
+        else "5"
+    )
 
     print("\n" + "=" * 80)
-    print(f"HASIL RERANKING - {mode}")
+    print(f"{final_step}. FINAL CONTEXT UNTUK LLM")
     print("=" * 80)
 
-    for i, doc in enumerate(
-        reranked_documents,
+    for index, document in enumerate(
+        final_documents,
         start=1,
     ):
+
         print(
-            f"\n===== Document {i} ====="
+            f"\n===== Document {index} ====="
         )
 
         print(
-            f"chunk_id    : "
-            f"{doc.metadata.get('chunk_id')}"
-        )
-
-        print(
-            f"source_type : "
-            f"{doc.metadata.get('source_type')}"
+            f"chunk_id : "
+            f"{document.metadata.get('chunk_id')}"
         )
 
         print("-" * 80)
 
-        print(doc.page_content)
+        print(document.page_content)
 
     # ========================================================
     # DEBUG KE FILE
@@ -321,191 +489,57 @@ def retrieve_docs(
         "debug_retrieval.txt",
         "a",
         encoding="utf-8",
-    ) as f:
+    ) as file:
 
-        f.write(
-            f"\n\nQUESTION: {question}\n"
+        file.write(
+            f"\n\n{'#' * 80}\n"
         )
 
-        f.write(
+        file.write(
             f"MODE: {mode}\n"
         )
 
-        f.write(
+        file.write(
+            f"QUESTION: {question}\n"
+        )
+
+        file.write(
             f"FETCH_K: {fetch_k}\n"
         )
 
-        f.write(
+        file.write(
             f"TARGET_K: {target_k}\n"
         )
 
-        f.write("=" * 80 + "\n")
-
-        for i, doc in enumerate(
-            reranked_documents,
-            start=1,
-        ):
-            f.write(
-                f"\n===== Document {i} =====\n"
-            )
-
-            f.write(
-                f"chunk_id    : "
-                f"{doc.metadata.get('chunk_id')}\n"
-            )
-
-            f.write(
-                f"source_type : "
-                f"{doc.metadata.get('source_type')}\n\n"
-            )
-
-            f.write(doc.page_content)
-            f.write("\n")
-
-    # ========================================================
-    # BASELINE
-    # ========================================================
-    #
-    # Baseline:
-    #
-    # original
-    #    ↓
-    # similarity search
-    #    ↓
-    # fetch_k kandidat
-    #    ↓
-    # reranking
-    #    ↓
-    # target_k
-    #    ↓
-    # original ke LLM
-    #
-    # ========================================================
-
-    if mode != "SCG":
-
-        print_results(
-            "FINAL CONTEXT BASELINE - ORIGINAL UNTUK LLM",
-            reranked_documents,
+        file.write(
+            f"{'#' * 80}\n"
         )
 
-        print("\n" + "=" * 80)
-        print("FINAL CONTEXT UNTUK LLM - BASELINE")
-        print("=" * 80)
-
-        for i, doc in enumerate(
-            reranked_documents,
+        for index, document in enumerate(
+            final_documents,
             start=1,
         ):
-            print(
-                f"\n===== Document {i} ====="
+
+            file.write(
+                f"\n===== Document {index} =====\n"
             )
 
-            print(
-                f"chunk_id    : "
-                f"{doc.metadata.get('chunk_id')}"
+            file.write(
+                f"chunk_id: "
+                f"{document.metadata.get('chunk_id')}\n\n"
             )
 
-            print(
-                f"source_type : "
-                f"{doc.metadata.get('source_type')}"
+            file.write(
+                document.page_content
             )
 
-            print("-" * 80)
-
-            print(doc.page_content)
-
-        return reranked_documents
-
-    # ========================================================
-    # SCG
-    # ========================================================
-    #
-    # Untuk sementara jangan jadikan ini fokus.
-    #
-    # Alur:
-    #
-    # synthetic
-    #    ↓
-    # similarity search
-    #    ↓
-    # reranking
-    #    ↓
-    # chunk_id
-    #    ↓
-    # mapping ke original
-    #    ↓
-    # original ke LLM
-    #
-    # ========================================================
-
-    print_results(
-        "HASIL RERANK SCG - SYNTHETIC",
-        reranked_documents,
-    )
-
-    # --------------------------------------------------------
-    # AMBIL CHUNK ID
-    # --------------------------------------------------------
-
-    chunk_ids = [
-        doc.metadata.get("chunk_id")
-        for doc in reranked_documents
-        if doc.metadata.get("chunk_id") is not None
-    ]
-
-    print("\n" + "=" * 80)
-    print("MAPPING SCG SYNTHETIC -> ORIGINAL")
-    print("=" * 80)
+            file.write("\n")
 
     print(
-        f"Chunk ID terpilih: {chunk_ids}"
+        f"\n[FINAL] {len(final_documents)} "
+        f"document dikirim ke LLM."
     )
 
-    # --------------------------------------------------------
-    # MAPPING KE ORIGINAL
-    # --------------------------------------------------------
+    print("#" * 80)
 
-    original_documents = (
-        get_original_documents_by_chunk_ids(
-            db=db,
-            chunk_ids=chunk_ids,
-        )
-    )
-
-    # ========================================================
-    # FINAL CONTEXT SCG
-    # ========================================================
-
-    print_results(
-        "FINAL CONTEXT SCG - ORIGINAL UNTUK LLM",
-        original_documents,
-    )
-
-    print("\n" + "=" * 80)
-    print("FINAL CONTEXT UNTUK LLM - SCG")
-    print("=" * 80)
-
-    for i, doc in enumerate(
-        original_documents,
-        start=1,
-    ):
-        print(
-            f"\n===== Document {i} ====="
-        )
-
-        print(
-            f"chunk_id    : "
-            f"{doc.metadata.get('chunk_id')}"
-        )
-
-        print(
-            f"source_type : "
-            f"{doc.metadata.get('source_type')}"
-        )
-
-        print("-" * 80)
-
-        print(doc.page_content)
-
-    return original_documents
+    return final_documents
